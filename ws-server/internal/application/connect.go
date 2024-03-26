@@ -1,4 +1,4 @@
-package app
+package application
 
 import (
 	"fmt"
@@ -9,7 +9,7 @@ import (
 )
 
 // connect - обработка подключения к новому пользователю.
-func (app *application) connect(w http.ResponseWriter, r *http.Request) {
+func (app *App) connect(w http.ResponseWriter, r *http.Request) {
 	var nickname string
 	if nicks, ok := r.Header["Nickname"]; ok && len(nicks) > 0 {
 		nickname = nicks[0]
@@ -72,7 +72,7 @@ func (app *application) connect(w http.ResponseWriter, r *http.Request) {
 // WriteMessage - отправление сообщения всем подключенным пользователям.
 //
 // Принимает: время создания сообщения, текст сообщения, имя отправителя.
-func (app *application) WriteMessage(creation time.Time, message []byte, nickname string) {
+func (app *App) WriteMessage(creation time.Time, message []byte, nickname string) {
 	for u := range app.users {
 		// FIXME не отправлять сообщение отправителю -- проблема в том, что у пользователей могут быть одинаковые ники.
 		// if nickname == u.GetNickname() {
@@ -85,7 +85,7 @@ func (app *application) WriteMessage(creation time.Time, message []byte, nicknam
 // handleMessage - обработка сообщения.
 //
 // Принимает: время создания сообщения, текст сообщения, имя отправителя.
-func (app *application) handleMessage(creation time.Time, message []byte, nickname string) {
+func (app *App) handleMessage(creation time.Time, message []byte, nickname string) {
 	app.infoLog.Printf("Message:\n%s\nsent by %s\n", string(message), nickname)
 
 	err := app.db.AddMessage(nickname, string(message), creation)

@@ -2,7 +2,6 @@ package app
 
 import (
 	"bufio"
-	"context"
 	"errors"
 	"fmt"
 	"net/http"
@@ -10,6 +9,7 @@ import (
 	"os"
 	"os/signal"
 	"sync"
+	"sync/atomic"
 	"syscall"
 
 	"github.com/gorilla/websocket"
@@ -19,10 +19,6 @@ import (
 const exitComm = ":exit"
 
 // Run - запуск приложения клиента.
-//
-// Принимает: адрес сервера, имя пользователя, сканнер ввода.
-//
-// Возвращает: ошибку.
 func Run(host string, nickname string, scanner *bufio.Scanner) error {
 	u := url.URL{Scheme: "ws", Host: host, Path: "/"}
 
@@ -34,57 +30,59 @@ func Run(host string, nickname string, scanner *bufio.Scanner) error {
 	}
 	defer c.Close()
 
-	connOk := true
-	mu := sync.Mutex{}
+	connOk := atomic.Bool{}
+	connOk.Store(true)
 
-	go grace(c)
+	wg := new(sync.WaitGroup)
+	wg.Add(1)
+	go grace(c, wg)
 
-	go func(ok *bool, mu *sync.Mutex) {
+	go func() {
 		for {
 			_, message, err := c.ReadMessage()
 			if err != nil {
-				mu.Lock()
-				connOk = false
-				mu.Unlock()
+				connOk.Store(false)
 				return
 			}
-			fmt.Println(string(message))
+			fmt.Printf("%s\n", message)
 		}
-	}(&connOk, &mu)
+	}()
 
-	fmt.Printf("To exit the chat input '%s'\n", exitComm)
+	go func() {
+		fmt.Printf("To exit the chat input '%s'\n", exitComm)
 
-	for {
-		mu.Lock()
-		if !connOk {
-			return errors.New("connection is bad")
+		for {
+			if !connOk.Load() {
+				err = errors.New("connection is bad")
+				break
+			}
+			ok := scanner.Scan()
+			if !ok {
+				continue
+			}
+			message := scanner.Text()
+			if message == exitComm {
+				break
+			}
+			err = c.WriteMessage(websocket.TextMessage, []byte(message))
+			if err != nil {
+				break
+			}
 		}
-		mu.Unlock()
-		ok := scanner.Scan()
-		if !ok {
-			continue
-		}
-		message := scanner.Text()
-		if message == exitComm {
-			break
-		}
-		err = c.WriteMessage(websocket.TextMessage, []byte(message))
-		if err != nil {
-			return err
-		}
-	}
 
-	return nil
+		wg.Done()
+	}()
+
+	wg.Wait()
+	return err
 }
 
 // grace - отслеживание и обработка принудительного выхода.
-//
-// Принимает: соединение.
-func grace(c *websocket.Conn) {
+func grace(c *websocket.Conn, wg *sync.WaitGroup) {
 	sigQuit := make(chan os.Signal, 2)
 	signal.Notify(sigQuit, syscall.SIGINT, syscall.SIGTERM)
 
-	eg, _ := errgroup.WithContext(context.Background())
+	eg := new(errgroup.Group)
 
 	eg.Go(func() error {
 		select {
@@ -101,5 +99,5 @@ func grace(c *websocket.Conn) {
 	if err != nil {
 		fmt.Printf("error whil closing the connection: %v", err)
 	}
-	os.Exit(1) // XXX Я не придумал, как нормально закрыть цикл считывания сообщений, но вроде и так всё ок.
+	wg.Done()
 }

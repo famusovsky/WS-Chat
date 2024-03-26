@@ -1,4 +1,4 @@
-package app
+package application
 
 import (
 	"net/http"
@@ -7,7 +7,7 @@ import (
 // routes - создание ServeMux для сервера чата.
 //
 // Возвращает: ServeMux.
-func (app *application) routes() *http.ServeMux {
+func (app *App) routes() *http.ServeMux {
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("/", app.connect)

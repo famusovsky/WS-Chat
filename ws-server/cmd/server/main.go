@@ -3,12 +3,16 @@ package main
 import (
 	"database/sql"
 	"flag"
+	"fmt"
 	"log"
 	"os"
-	"ws-server/internal/app"
+	"os/signal"
+	"syscall"
+	"ws-server/internal/application"
 	"ws-server/pkg/database"
 
 	_ "github.com/lib/pq"
+	"golang.org/x/sync/errgroup"
 )
 
 func main() {
@@ -32,9 +36,26 @@ func main() {
 	}
 	defer db.Close()
 
-	model, err := app.CreateModel(*addr, infoLog, errorLog, db, *overrideTables)
+	app, err := application.CreateApp(*addr, infoLog, errorLog, db, *overrideTables)
 	if err != nil {
 		errorLog.Fatal(err)
 	}
-	model.Run()
+
+	sigQuit := make(chan os.Signal, 2)
+	signal.Notify(sigQuit, syscall.SIGINT, syscall.SIGTERM)
+	eg := new(errgroup.Group)
+
+	eg.Go(func() error {
+		select {
+		case s := <-sigQuit:
+			return fmt.Errorf("captured signal: %v", s)
+		}
+	})
+
+	app.Run()
+
+	if err := eg.Wait(); err != nil {
+		infoLog.Printf("gracefully shutting down the server: %v\n", err)
+		app.Shutdown()
+	}
 }
